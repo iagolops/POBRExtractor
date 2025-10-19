@@ -1,6 +1,6 @@
 # Photometric Object and Background Reduction Extractor (POBRExtractor)
 
-![POBRExtractor Logo](logo/POBRExtractor.jpg)
+![POBRExtractor Logo](logo/POBRExtractor-removebg.png)
 
 **POBRExtractor** is a Python-based pipeline designed to perform source detection and photometric measurements on multi-band astronomical images.  
 It takes as input several images of the same sky region across different filters and produces an object catalog containing astrometric and photometric information.

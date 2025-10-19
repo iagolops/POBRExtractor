@@ -50,7 +50,7 @@ def main(config):
                                   sigma_detection=det_params['sigma_threshold'],
                                   sigma_convolution=conv_params['sigma'])
     
-    plot(residual_final)
+    plot(residual_final, vmin=0)
     plt.title('Image after masking')
     plt.savefig(f"{io_params['plot_dir']}/residual.png", dpi=400)
     plt.close()

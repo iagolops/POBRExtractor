@@ -10,12 +10,12 @@ This code is designed as a simplified educational prototype rather than a full p
 
 ---
 
-## Running POBRExtractor
+## 💻 Running POBRExtractor
 
 ```bash
 python src/POBRExtractor.py data/input.yaml 
 ```
-
+---
 
 ## 🧠 Workflow Overview
 
@@ -24,6 +24,16 @@ The diagram below summarizes the internal workflow of the pipeline:
 ![POBRExtractor Workflow](logo/POBRExtractor%20Workflow.png)
 
 ---
+
+## 🌌 Example of source detection
+
+HSC's coadd image (i-band)
+
+![POBRExtractor Workflow](data/plots/raw_image.png)
+
+Objects detected
+
+![POBRExtractor Workflow](data/plots/residual.png)
 
 ## 📚 Citation / Acknowledgment
 

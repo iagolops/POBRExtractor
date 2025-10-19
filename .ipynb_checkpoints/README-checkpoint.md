@@ -29,11 +29,7 @@ The diagram below summarizes the internal workflow of the pipeline:
 
 HSC's coadd image (i-band)
 
-![POBRExtractor Workflow](data/plots/raw_image.png)
-
-Objects detected
-
-![POBRExtractor Workflow](data/plots/residual.png)
+![POBRExtractor Workflow](data/plots/residual_vs_raw.png)
 
 ## 📚 Citation / Acknowledgment
 

@@ -40,19 +40,28 @@ def main(config):
     print(f"Loading detection image: {det_params['band']}")
     image = fits.getdata(io_params['image_files'][det_params['band']])
 
+    plt.figure(figsize=(12, 6))
+    plt.subplot(1, 2, 1)
     plot(image)
-    plt.title('Raw image')
-    plt.savefig(f"{io_params['plot_dir']}/raw_image.png", dpi=400)
-    plt.close()
-
-    # Remove noise and mask regions of interest
-    residual_final = remove_noise(image, m_size=conv_params['matrix_size'],
-                                  sigma_detection=det_params['sigma_threshold'],
-                                  sigma_convolution=conv_params['sigma'])
+    plt.title('Raw image', color='white')
+    plt.axis('off') 
     
+    # Remove noise and mask regions of interest
+    residual_final = remove_noise(
+        image,
+        m_size=conv_params['matrix_size'],
+        sigma_detection=det_params['sigma_threshold'],
+        sigma_convolution=conv_params['sigma']
+    )
+    
+    plt.subplot(1, 2, 2)
     plot(residual_final, vmin=0)
-    plt.title('Image after masking')
-    plt.savefig(f"{io_params['plot_dir']}/residual.png", dpi=400)
+    plt.title('Image after masking', color='white')
+    plt.axis('off') 
+    
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.92) 
+    plt.savefig(f"{io_params['plot_dir']}/residual_vs_raw.png", dpi=500, transparent=True)
     plt.close()
 
     n = 1

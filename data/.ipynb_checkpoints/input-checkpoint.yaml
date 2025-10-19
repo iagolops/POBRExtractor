@@ -1,17 +1,17 @@
 io:
   # Paths to the input FITS files for each band
   image_files:
-    g: '7,7_g_band.fits'
-    r: '7,7_r_band.fits'
-    i: '7,7_i_band.fits'
-    z: '7,7_z_band.fits'
-    y: '7,7_y_band.fits'
+    g: 'data/7,7_g_band.fits'
+    r: 'data/7,7_r_band.fits'
+    i: 'data/7,7_i_band.fits'
+    z: 'data/7,7_z_band.fits'
+    y: 'data/7,7_y_band.fits'
   
   # Filepath for the final output catalog
-  output_filepath: 'photometry_results.parquet'
+  output_filepath: 'data/photometry_results.parquet'
 
   save_plots: True
-  plot_dir: 'plots'
+  plot_dir: 'data/plots/'
   n_stop: 100 # number of objects to stop the pipeline in case it takes a long time
 
 # Parameters for object detection

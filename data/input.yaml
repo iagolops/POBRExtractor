@@ -1,0 +1,28 @@
+io:
+  # Paths to the input FITS files for each band
+  image_files:
+    g: '7,7_g_band.fits'
+    r: '7,7_r_band.fits'
+    i: '7,7_i_band.fits'
+    z: '7,7_z_band.fits'
+    y: '7,7_y_band.fits'
+  
+  # Filepath for the final output catalog
+  output_filepath: 'photometry_results.parquet'
+
+  save_plots: True
+  plot_dir: 'plots'
+  n_stop: 100 # number of objects to stop the pipeline in case it takes a long time
+
+# Parameters for object detection
+detection:
+  band: 'i' # Band to use for detecting objects
+  sigma_threshold: 0.4 # Significance threshold for final residual map
+
+# Parameters for the convolution kernel used in detection
+convolution:
+  matrix_size: 20 # Size of the 2D Gaussian kernel
+  sigma: 3.0      # Sigma of the 2D Gaussian kernel
+
+photometry:
+  zero_point: 27.0 # HSC's zero point

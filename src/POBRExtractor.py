@@ -7,9 +7,10 @@ from astropy.io import fits
 import matplotlib.pyplot as plt
 
 from Image import (gaussian_2d, remove_noise, plot, column_size, line_size)
-from Psf_fitting import (optimize_cmodel, optimize_psf,
-                         compute_reduced_chi2_from_leastsq, flux_dev, flux_exp)
+from Psf_fitting import (optimize_cmodel, optimize_psf, flux_dev, flux_exp)
 from Astrometry import (estimate_position, estimate_ellipticity)
+
+
 
 def main(config):
     """
@@ -28,9 +29,7 @@ def main(config):
     phot_params = config['photometry']
 
     # Auxiliar objects
-    final_data = pd.DataFrame([])
-    mags = []
-    chi2 = []
+    object_data_list = []
     
     # Prepare output directory for plots
     if io_params['save_plots']:
@@ -65,12 +64,14 @@ def main(config):
     plt.close()
 
     n = 1
-    while np.any(residual_final > 0):
-        print(f'{n} objects until now...')
-        n+=1
+    psf_kernels = {}
 
+    while np.any(residual_final > 0):
         if n >= io_params['n_stop']:
             break
+        print(f'{n} objects detected until now...')
+        
+        current_object_data = {}
         
         ### Finding the maximum ###
         idx = np.argmax(residual_final)
@@ -85,29 +86,49 @@ def main(config):
             else:
                 image_tmp = fits.getdata(io_params['image_files'][band])
                 sub_image = image_tmp[i_c-i_min:i_c+i_max, j_c-j_min:j_c+j_max]
+                
+            sub_image = sub_image.astype(np.float32)
 
+            j = np.arange(sub_image.shape[1])
+            i = np.arange(sub_image.shape[0])
+            j, i = np.meshgrid(j, i)
+            
             ### Fitting the Gaussian PSF ###
-            res = optimize_psf(sub_image, i_min, i_max, j_min, j_max)
-            i0_psf, j0_psf, offset_psf, amp_psf, sigma_i_psf, sigma_j_psf = res.x
+            params_psf = optimize_psf(sub_image, i_max, i_min, j_max, j_min, i, j)
+            i0_psf, j0_psf, offset_psf, amp_psf, sigma_i_psf, sigma_j_psf = params_psf
+
+            if n == 1:
+                print(f"    Estimating and storing PSF kernel for band '{band}' from the brightest object.")
+                i_range = np.arange(sub_image.shape[0])
+                j_range = np.arange(sub_image.shape[1])
+                jj, ii = np.meshgrid(j_range, i_range)
+
+                unnormalized_kernel = gaussian_2d((ii, jj), i0_psf, j0_psf, amp_psf, sigma_i_psf, sigma_j_psf)
+                psf_kernels[band] = unnormalized_kernel / np.sum(unnormalized_kernel)
 
             ### Fitting the Composite Model (CModel) ###
-            res_cmodel = optimize_cmodel(sub_image, i_min, j_min)
-            i0, j0, off_set, re_dev, re_exp, Ie_dev, Ie_exp, q = res_cmodel.x
-
-            ### Computing the chi2 for each model ###
-            redchi_psf = compute_reduced_chi2_from_leastsq(res, sub_image.size)
-            redchi_c  = compute_reduced_chi2_from_leastsq(res_cmodel, sub_image.size)
-            chi2.append([redchi_psf, redchi_c])
-
+            params_cmodel = optimize_cmodel(sub_image, psf_kernels[band], i, j, psf_params=params_psf)
+            
+            i0, j0, off_set, re_dev, re_exp, Ie_dev, Ie_exp, q, theta = params_cmodel
+                
             ### Calculating position and ellipticity ###
-            pos_psf, pos_cmodel = estimate_position(io_params['image_files'][band], (i0_psf, j0_psf), (i0, j0))
+            i_global_psf = i0_psf + (i_c - i_min)
+            i_global_cmodel = i0 + (i_c - i_min)
+            j_global_psf = j0_psf + (j_c - j_min)
+            j_global_cmodel = j0 + (j_c - j_min)
+          
+            ### Calculating position and ellipticity ###
+            pos_psf, pos_cmodel = estimate_position(io_params['image_files'][band], 
+                                                    (i_global_psf, j_global_psf), 
+                                                    (i_global_cmodel, j_global_cmodel)
+                                                   )
             e = estimate_ellipticity(q)
 
-            final_data[f'RA'] = pos_psf[0]
-            final_data[f'DEC'] = pos_psf[1]
-            final_data[f'RA_cmodel'] = pos_cmodel[0]
-            final_data[f'DEC_cmodel'] = pos_cmodel[1]
-            final_data['ellipticity'] = e
+            current_object_data[f'RA_{band}_psf'] = pos_psf[0]
+            current_object_data[f'DEC_{band}_psf'] = pos_psf[1]
+            current_object_data[f'RA_{band}_cmodel'] = pos_cmodel[0]
+            current_object_data[f'DEC_{band}_cmodel'] = pos_cmodel[1]
+            current_object_data[f'ellipticity_{band}'] = e
             
             ### Estimating magnitudes ###
             flux_psf = 2.0 * np.pi * amp_psf * sigma_i_psf * sigma_j_psf
@@ -117,18 +138,21 @@ def main(config):
             flux_e = flux_exp(Ie_exp, re_exp, q)
             flux_cmodel = flux_d + flux_e
             mag_cmodel = -2.5 * np.log10(flux_cmodel) + phot_params['zero_point']
-            
-            final_data[f'mag_{band}_gaussian'] = mag_gaussian
-            final_data[f'mag_{band}_cmodel'] = mag_cmodel
 
-            ### Removing objects from the detection image ###
-            residual_final[i_c-i_min:i_c+i_max, j_c-j_min:j_c+j_max] = 0.0
+            current_object_data[f'mag_{band}_gaussian'] = mag_gaussian
+            current_object_data[f'mag_{band}_cmodel'] = mag_cmodel
 
+        object_data_list.append(current_object_data)
+
+        ### Removing objects from the detection image ###
+        residual_final[i_c-i_min:i_c+i_max, j_c-j_min:j_c+j_max] = 0.0
+        n += 1
+
+    final_data = pd.DataFrame(object_data_list)
     final_data.to_parquet(io_params['output_filepath'])
-    print(f"{n} Objects found !!!")
+    print(f"{n-1} Objects found !!!")
     print("\n")
     print('############### POBRExtractor Finished ###############')
-
 
 
 if __name__ == '__main__':

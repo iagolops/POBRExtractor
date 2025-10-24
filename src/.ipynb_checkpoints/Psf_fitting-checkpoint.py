@@ -2,163 +2,153 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.ndimage import convolve
-from scipy.optimize import curve_fit, least_squares
+from scipy.optimize import curve_fit
+from scipy.signal import fftconvolve
 
 def psf_gaussian(ij, i0, j0, offset, amp, sigma_i, sigma_j):
-    """
-    Calculates a 2D elliptical Gaussian function.
-    
-    """
     i, j = ij
     value = offset + amp * np.exp(
         -(((i - i0)**2) / (2 * sigma_i**2) + ((j - j0)**2) / (2 * sigma_j**2))
     )
     return value.ravel()
-    
 
-def cmodel_2d(ij, i0, j0, off_set, re_dev, re_exp, Ie_dev, Ie_exp, q):
-    """
-    Calculates a 2D composite galaxy model (Sérsic + Exponential).
-
-    This model combines a de Vaucouleurs (n=4 Sérsic profile) for the bulge
-    and an exponential disk profile (n=1 Sérsic profile) for the disk.
-
-    """
+def cmodel_2d(ij, i0, j0, off_set, re_dev, re_exp, Ie_dev, Ie_exp, q, theta):
     i, j = ij
-    
     i_prime = i - i0
     j_prime = j - j0
 
-    r = np.sqrt(i_prime**2 + (j_prime/q)**2)
+    i_rot = i_prime * np.cos(theta) + j_prime * np.sin(theta)
+    j_rot = -i_prime * np.sin(theta) + j_prime * np.cos(theta)
 
-    b_dev = 7.669  # Constant for n=4 Sérsic profile
-    b_exp = 1.678  # Constant for n=1 Sérsic profile
-    
-    I_dev = Ie_dev * np.exp(-b_dev * ((r / re_dev)**(1/4) - 1))
-    I_exp = Ie_exp * np.exp(-b_exp * ((r / re_exp) - 1))
+    r = np.sqrt((i_rot / q)**2 + j_rot**2)
+
+    b_dev = 7.669
+    b_exp = 1.678
+    r_re_dev = r / re_dev
+    r_re_exp = r / re_exp
+    I_dev = Ie_dev * np.exp(-b_dev * (r_re_dev**0.25 - 1))
+    I_exp = Ie_exp * np.exp(-b_exp * (r_re_exp - 1))
 
     return (off_set + I_dev + I_exp).ravel()
 
-
-def residuals(params, i, j, data):
-    """
-    Calculates the residuals for the psf_gaussian model fit.
-
-    """
-    i0, j0, offset, amp, sigma_i, sigma_j = params
-    model = psf_gaussian((i, j), i0, j0, offset, amp, sigma_i, sigma_j)
-    return (model - data.ravel())
-
-
-def residuals_cmodel_2d(params, i, j, data):
-    """
-    Calculates the residuals for the cmodel_2d galaxy model fit.
-
-    """
-    i0, j0, off_set, re_dev, re_exp, Ie_dev, Ie_exp, q = params
-    model = cmodel_2d((i, j), i0, j0, off_set, re_dev, re_exp, Ie_dev, Ie_exp, q)
-    return (model - data.ravel())
-
-
-def optimize_psf(sub_image, i_min, i_max, j_min, j_max):
-    """
-    Performs a least-squares fit of the 2D Gaussian PSF model to an image.
-
-    This function sets up the initial guesses and bounds for the PSF parameters
-    and runs the optimization routine.
-
-    Args:
-        sub_image (numpy.ndarray): The 2D image data of a star.
-        i_min, i_max, j_min, j_max (int): The coordinate boundaries of the star,
-                                         used for initial guesses.
-
-    Returns:
-        scipy.optimize.OptimizeResult: The result object from least_squares.
-    """
-    j = np.arange(sub_image.shape[1])
-    i = np.arange(sub_image.shape[0])
-    j, i = np.meshgrid(j, i)
-
-    # Initial guess
-    offset = max(sub_image.mean(), 0)
+def optimize_psf(sub_image, i_max, i_min, j_max, j_min, i, j):
+    y_data = sub_image.ravel()
+    x_data = (i, j)
+    
+    offset = np.median(sub_image)
     amp_ini = max(np.max(sub_image) - offset, 0)
-    sigma_i = max(np.mean([i_max, i_min]) / 10, 0)
-    sigma_j = max(np.mean([j_max, j_min]) / 10, 0)
-    i_min = max(i_min, 0)
-    j_min = max(j_min, 0)
+    i_center_guess = i_min - 1
+    j_center_guess = j_min - 1
+    sigma_i = np.mean([i_max, i_min]) / 9
+    sigma_j = np.mean([j_max, j_min]) / 9
+    initial_guess = (i_center_guess, j_center_guess, offset, amp_ini, sigma_i, sigma_j)
 
-    initial_guess = (i_min, j_min, offset, amp_ini, sigma_i, sigma_j)
+    lower_bounds = [0, 0, 0, 0, 0.001, 0.1]
+    upper_bounds = [sub_image.shape[0], sub_image.shape[1], np.inf, np.inf, np.inf, np.inf]
 
-    # Optimizing
-    res = least_squares(residuals, initial_guess, args=(i, j, sub_image),
-                        method='trf', loss='huber', f_scale=0.1,
-                        max_nfev=20000)
-    return res
+    try:
+        popt, pcov = curve_fit(psf_gaussian, x_data, y_data, p0=initial_guess,
+                               bounds=(lower_bounds, upper_bounds), maxfev=20000)
+        return popt
 
-def optimize_cmodel(sub_image, i_min, j_min):
+    # This fit doesn't work always !!! 
+    except (ValueError, RuntimeError):
+        print("PSF Fit failed (initial guess likely out of bounds or fit did not converge). Returning NaN.")
+        return (np.nan,) * 6
+
+def get_moments_guesses(image, background_level):
     """
-    Performs a least-squares fit of the 2D composite galaxy model to an image.
-
-    This function sets up the initial guesses and bounds for the galaxy model
-    parameters and runs the optimization routine.
-
-    Args:
-        sub_image (numpy.ndarray): The 2D image data of a galaxy.
-        i_min, j_min (int): The approximate center coordinates of the galaxy for
-                            the initial guess.
-
-    Returns:
-        scipy.optimize.OptimizeResult: The result object from least_squares.
+    Calculates initial guesses for q, theta, and the effective radius (re)
+    from the second-order moments of the image.
     """
-    j = np.arange(sub_image.shape[1])
-    i = np.arange(sub_image.shape[0])
-    j, i = np.meshgrid(j, i)
+    img = image.astype(np.float64) - background_level
+    img[img < 0] = 0
+    total_flux = np.sum(img)
+    if total_flux <= 1e-6:
+        return 0.9, 0.0, 2.0
 
-    # Initial guess
-    peak_intensity = max(np.max(sub_image) - sub_image.mean(), 0)
-    Ie_dev_guess = max(peak_intensity / 2140.0, 0)
-    Ie_exp_guess = max(peak_intensity / 5.35, 0)
-    i_min = max(i_min, 0)
-    j_min = max(j_min, 0)
-    offset = max(sub_image.mean(), 0)
-    re = max(np.mean(sub_image.shape[0] + sub_image.shape[1]) / 5, 0) # for dev and exp
-    q = 0.8
+    y, x = np.indices(img.shape)
+    x_c = np.sum(x * img) / total_flux
+    y_c = np.sum(y * img) / total_flux
+    dx = x - x_c
+    dy = y - y_c
+    mu_xx = np.sum(dx**2 * img) / total_flux
+    mu_yy = np.sum(dy**2 * img) / total_flux
+    mu_xy = np.sum(dx * dy * img) / total_flux
+
+    # Theta and q calculation (unchanged)
+    theta_guess = 0.5 * np.arctan2(2 * mu_xy, mu_xx - mu_yy)
+    if theta_guess < 0:
+        theta_guess += np.pi
+    
+    term = np.sqrt(4 * mu_xy**2 + (mu_xx - mu_yy)**2)
+    lambda_1 = 0.5 * ((mu_xx + mu_yy) + term) 
+    lambda_2 = 0.5 * ((mu_xx + mu_yy) - term) 
+
+    if lambda_1 > 1e-6 and lambda_2 > 1e-6:
+        q_guess = np.sqrt(lambda_2 / lambda_1)
+    else:
+        q_guess = 0.9
+        
+    re_guess = 1.5 * np.sqrt(lambda_1)
+
+    return np.clip(q_guess, 0.05, 1.0), theta_guess, max(re_guess, 0.5)
+
+def optimize_cmodel(sub_image, psf_kernel, i, j, psf_params):
+    psf_kernel = psf_kernel.astype(np.float32)
+    y_data = sub_image.ravel()
+    x_data = (i, j)
+
+    i0_psf, j0_psf, offset_psf, amp_psf, sigma_i_psf, sigma_j_psf = psf_params
+    
+    q_guess, theta_guess, re_guess = get_moments_guesses(sub_image, offset_psf)
+
+    peak_pixel_value = np.max(sub_image) - offset_psf
+    b_dev, b_exp = 7.669, 1.678
+    
+    Ie_dev_guess = max((peak_pixel_value / 2.0) / np.exp(b_dev), 1e-4)
+    Ie_exp_guess = max((peak_pixel_value / 2.0) / np.exp(b_exp), 1e-4)
 
     initial_guess_cmodel = (
-        i_min, j_min, offset, re, re, Ie_dev_guess, Ie_exp_guess, q)
-    
-    # Optimizing
-    res_cmodel = least_squares(residuals_cmodel_2d, initial_guess_cmodel,
-        args=(i, j, sub_image), method='trf', loss='huber', f_scale=0.1,
-        max_nfev=20000,
-        bounds=(
-            [0.0, 0.0, 0.0, 0.1, 0.1, 0.0, 0.0, 0.1],
-            [np.inf, np.inf, np.inf, np.inf, np.inf, np.inf, np.inf, 1.0]))
-    
-    return res_cmodel
-    
+        re_guess, re_guess,
+        Ie_dev_guess, Ie_exp_guess,
+        q_guess, theta_guess
+    )
 
-def compute_reduced_chi2_from_leastsq(res, ndata):
-    """
-    Computes the reduced chi-squared statistic from a least_squares result.
+    min_re = np.sqrt(sigma_i_psf**2 + sigma_j_psf**2)
+    max_re = max(sub_image.shape)
+    
+    max_Ie_dev = Ie_dev_guess * 50
+    max_Ie_exp = Ie_exp_guess * 50
 
-    """
-    sumsq = 2.0 * res.cost  # cost is 0.5 * sum(residuals**2)
-    dof = max(1, ndata - len(res.x)) # Degrees of freedom
-    return sumsq / dof
+    lower_bounds = [min_re, min_re, 0, 0, 0.05, 0.0]
+    upper_bounds = [max_re, max_re, max_Ie_dev, max_Ie_exp, 1.0, np.pi]
+
+    def wrapped_cmodel_fixed_center(ij, re_dev, re_exp, Ie_dev, Ie_exp, q, theta):
+        pure_model_1d = cmodel_2d(
+            ij, i0_psf, j0_psf, offset_psf, re_dev, re_exp, Ie_dev, Ie_exp, q, theta
+        )
+        pure_model_2d = pure_model_1d.reshape(sub_image.shape)
+        convolved_model = fftconvolve(pure_model_2d, psf_kernel, mode='same')
+        return convolved_model.ravel()
+
+    try:
+        popt, pcov = curve_fit(
+            wrapped_cmodel_fixed_center, x_data, y_data,
+            p0=initial_guess_cmodel,
+            bounds=(lower_bounds, upper_bounds),
+            maxfev=20000)
+        
+        re_dev, re_exp, Ie_dev, Ie_exp, q, theta = popt
+        return (i0_psf, j0_psf, offset_psf, re_dev, re_exp, Ie_dev, Ie_exp, q, theta)
+
+    except (RuntimeError, ValueError):
+        print("CModel Fit failed, returning NaN.")
+        return (np.nan,) * 9
 
 
 def flux_dev(Ie_dev, re_dev, q):
-    """
-    Calculates the total integrated flux of the de Vaucouleurs component.
-
-    """
     return 22.67 * Ie_dev * re_dev**2 * q
 
-
 def flux_exp(Ie_exp, re_exp, q):
-    """
-    Calculates the total integrated flux of the exponential disk component.
-
-    """
     return 3.80 * Ie_exp * re_exp**2 * q

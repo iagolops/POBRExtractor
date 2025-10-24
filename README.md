@@ -15,6 +15,12 @@ This code is designed as a simplified educational prototype rather than a full p
 ```bash
 python src/POBRExtractor.py data/input.yaml 
 ```
+
+Diagnostic plots (you should extract the data first!)
+```bash
+python src/generate_plots.py data/plots/
+```
+
 ---
 
 ## 🧠 Workflow Overview
@@ -35,7 +41,7 @@ HSC's coadd image (i-band)
 
 If you use this code (PLEASE DON'T), please cite:
 
-> Lopes, Iago (2025). *Photometric Object and Background Reduction Extractor (POBRExtractor)* (It doensn't exists 🫠).  
+> Lopes, Iago (2025). *Photometric Object and Background Reduction Extractor (POBRExtractor)* (It doesn't exists 🫠).  
 > Course Project, Observatório do Valongo – UFRJ.  
 
 ---

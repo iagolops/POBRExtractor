@@ -1,23 +1,25 @@
 from astropy.io import fits
+from astropy.wcs import WCS
 
 def estimate_position(image_file, psf_coords, obj_coords):
-    i0_psf, j0_psf = psf_coords
-    i0, j0 = obj_coords
-    
+    i_psf, j_psf = psf_coords
+    i_obj, j_obj = obj_coords
+
     with fits.open(image_file) as im:
         hdr = im[1].header
-    
-    crpix1, crpix2 = hdr['CRPIX1'], hdr['CRPIX2']
-    crval1, crval2 = hdr['CRVAL1'], hdr['CRVAL2']
-    cd11, cd22 = hdr['CD1_1'], hdr['CD2_2']
-    
-    ra_psf = crval1 + (i0_psf - crpix1) * cd11
-    dec_psf = crval2 + (j0_psf - crpix2) * cd22
-    ra = crval1 + (i0 - crpix1) * cd11
-    dec = crval2 + (j0 - crpix2) * cd22
-    
-    return (ra_psf, dec_psf), (ra, dec)
-    
-    
+        wcs = WCS(hdr)
+
+    ra_psf, dec_psf = wcs.wcs_pix2world(j_psf, i_psf, 0)
+    ra_obj, dec_obj = wcs.wcs_pix2world(j_obj, i_obj, 0)
+
+    ra_psf = float(ra_psf)
+    dec_psf = float(dec_psf)
+    ra_obj = float(ra_obj)
+    dec_obj = float(dec_obj)
+
+    return (ra_psf, dec_psf), (ra_obj, dec_obj)
+    return (ra_psf, dec_psf), (ra_obj, dec_obj)
+
+
 def estimate_ellipticity(q):
     return (1 - q) / (1 + q)
